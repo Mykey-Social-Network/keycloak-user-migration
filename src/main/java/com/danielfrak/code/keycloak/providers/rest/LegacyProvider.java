@@ -8,18 +8,20 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.credential.CredentialInput;
 import org.keycloak.credential.CredentialInputUpdater;
 import org.keycloak.credential.CredentialInputValidator;
+import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.keycloak.policy.PasswordPolicyManagerProvider;
 import org.keycloak.policy.PolicyError;
+import org.keycloak.storage.UserStoragePrivateUtil;
 import org.keycloak.storage.UserStorageProvider;
 import org.keycloak.storage.user.UserLookupProvider;
+import org.keycloak.storage.user.UserQueryProvider;
+import org.keycloak.storage.user.UserRegistrationProvider;
 
-import java.util.Collections;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -28,8 +30,12 @@ import java.util.stream.Stream;
  */
 public class LegacyProvider implements UserStorageProvider,
         UserLookupProvider,
+        UserQueryProvider,
         CredentialInputUpdater,
-        CredentialInputValidator {
+        CredentialInputValidator,
+        UserRegistrationProvider
+{
+
 
     private static final Logger LOG = Logger.getLogger(LegacyProvider.class);
     private static final Set<String> supportedCredentialTypes = Collections.singleton(PasswordCredentialModel.TYPE);
@@ -46,23 +52,70 @@ public class LegacyProvider implements UserStorageProvider,
         this.model = model;
     }
 
-
     private UserModel getUserModel(RealmModel realm, String username, Supplier<Optional<LegacyUser>> user) {
         return user.get()
-                .filter(u -> {
-                    // Make sure we're not trying to migrate users if they have changed their username
-                    boolean duplicate = userModelFactory.isDuplicateUserId(u, realm);
-                    if (duplicate) {
-                        LOG.warnf("User with the same user id already exists: %s", u.getId());
-                    }
-                    return !duplicate;
-                })
-                .map(u -> userModelFactory.create(u, realm))
+//                .filter(u -> {
+//                    // Make sure we're not trying to migrate users if they have changed their username
+//                    LOG.warnf("Searching for: %s", username);
+//                    boolean duplicate = userModelFactory.isDuplicateUserId(u, realm);
+//                    if (duplicate) {
+//                        LOG.warnf("User with the same user id already exists: %s", u.getId());
+//                    }
+//                    return !duplicate;
+//                })
+
+                .map(u -> {
+                            // Make sure we're not trying to migrate users if they have changed their username
+                            LOG.warnf("Searching for: %s", username);
+                            boolean duplicate = userModelFactory.isDuplicateUserId(u, realm);
+                            if (duplicate) {
+                                LOG.warnf("User with the same user id already exists: %s", u.getId());
+                                return userModelFactory.getUserById( u,realm);
+                            } else {
+                                LOG.warnf("User with the same user id created : %s", u.getId());
+                                return userModelFactory.create(u, realm);
+                            }
+                        }
+                )
                 .orElseGet(() -> {
                     LOG.warnf("User not found in external repository: %s", username);
-                    return null;
+                    if(session == null) {
+                        LOG.info("session is null");
+                        return null;
+                    }
+                    else {
+                        try {
+                            LOG.info("searching in local storage");
+                            var us = UserStoragePrivateUtil.userLocalStorage(session).getUserByUsername(realm, username);
+                            LOG.info("user from local "+us);
+                            return us;
+                        } catch (Exception e){
+                            LOG.error("error",e);
+                            return  null;
+                        }
+                    }
+
                 });
     }
+
+
+//    private UserModel getUserModel(RealmModel realm, String username, Supplier<Optional<LegacyUser>> user) {
+//        return user.get()
+//                .filter(u -> {
+//                    // Make sure we're not trying to migrate users if they have changed their username
+//                    LOG.warnf("Searching for: %s", username);
+//                    boolean duplicate = userModelFactory.isDuplicateUserId(u, realm);
+//                    if (duplicate) {
+//                        LOG.warnf("User with the same user id already exists: %s", u.getId());
+//                    }
+//                    return !duplicate;
+//                })
+//                .map(u -> userModelFactory.create(u, realm))
+//                .orElseGet(() -> {
+//                    LOG.warnf("User not found in external repository: %s", username);
+//                    return null;
+//                });
+//    }
 
     @Override
     public boolean isValid(RealmModel realmModel, UserModel userModel, CredentialInput input) {
@@ -166,5 +219,49 @@ public class LegacyProvider implements UserStorageProvider,
     @Override
     public UserModel getUserByEmail(RealmModel realmModel, String email) {
         return getUserModel(realmModel, email, () -> legacyUserService.findByEmail(email));
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserStream(RealmModel realm, String search, Integer firstResult, Integer maxResults) {
+        return Stream.empty();
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserStream(RealmModel realm, Map<String, String> params, Integer firstResult, Integer maxResults) {
+        return Stream.empty();
+    }
+
+    @Override
+    public Stream<UserModel> getGroupMembersStream(RealmModel realm, GroupModel group, Integer firstResult, Integer maxResults) {
+        return Stream.empty();
+    }
+
+    @Override
+    public Stream<UserModel> searchForUserByUserAttributeStream(RealmModel realm, String attrName, String attrValue) {
+            Stream<UserModel> localStream = UserStoragePrivateUtil.userLocalStorage(session).searchForUserByUserAttributeStream(realm, attrName, attrValue);
+            List<UserModel> localList = localStream.toList();
+            if (!localList.isEmpty()) {
+                return localList.stream();
+            } else {
+                return Stream.of(getUserModel(realm, attrValue, () -> legacyUserService.findByPhone(attrValue)))
+                        .filter(Objects::nonNull);
+            }
+
+//        }
+
+    }
+
+
+    @Override
+    public UserModel addUser(RealmModel realm, String username) {
+        var legacyUser = legacyUserService.createLegacyUser(username);
+        var userModel = getUserByUsername(realm,username);
+        severFederationLink(userModel);
+        return userModel;
+    }
+
+    @Override
+    public boolean removeUser(RealmModel realm, UserModel user) {
+        return false;
     }
 }

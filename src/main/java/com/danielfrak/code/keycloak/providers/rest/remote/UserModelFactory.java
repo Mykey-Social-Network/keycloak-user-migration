@@ -52,14 +52,15 @@ public class UserModelFactory {
         return newRoleMap;
     }
 
-    public UserModel create(LegacyUser legacyUser, RealmModel realm) {
+    public UserModel create(LegacyUser legacyUser, RealmModel realm, KeycloakSession session) {
         LOG.infof("Creating user model for: %s", legacyUser.getUsername());
 
         UserModel userModel;
+        var userProvider =  session.users();
         if (isEmpty(legacyUser.getId())) {
-            userModel = session.users().addUser(realm, legacyUser.getUsername());
+            userModel = userProvider.addUser(realm, legacyUser.getUsername());
         } else {
-            userModel = session.users().addUser(
+            userModel = userProvider.addUser(
                     realm,
                     legacyUser.getId(),
                     legacyUser.getUsername(),
@@ -78,6 +79,7 @@ public class UserModelFactory {
         userModel.setLastName(legacyUser.getLastName());
 
         if (legacyUser.getAttributes() != null) {
+            legacyUser.getAttributes().forEach((String name, List<String> values ) -> {values.forEach((str)-> {LOG.info(name +" "+str);});});
             legacyUser.getAttributes()
                     .forEach(userModel::setAttribute);
         }
@@ -90,10 +92,63 @@ public class UserModelFactory {
 
         if (legacyUser.getRequiredActions() != null) {
             legacyUser.getRequiredActions()
-                .forEach(userModel::addRequiredAction);
+                    .forEach(userModel::addRequiredAction);
         }
-
         return userModel;
+    }
+
+    public UserModel createInLocal(LegacyUser legacyUser, RealmModel realm,KeycloakSession session) {
+        return create(legacyUser, realm, session);
+    }
+
+    public UserModel createInLocal(LegacyUser legacyUser, RealmModel realm) {
+        return create(legacyUser, realm, session);
+    }
+    public UserModel create(LegacyUser legacyUser, RealmModel realm) {
+        return create(legacyUser,realm,session);
+//            LOG.infof("Creating user model for: %s", legacyUser.getUsername());
+//
+//            UserModel userModel;
+//            var userProvider =  session.users();
+//
+//            if (isEmpty(legacyUser.getId())) {
+//                userModel = userProvider.addUser(realm, legacyUser.getUsername());
+//            } else {
+//                userModel = userProvider.addUser(
+//                        realm,
+//                        legacyUser.getId(),
+//                        legacyUser.getUsername(),
+//                        true,
+//                        false
+//                );
+//            }
+//
+//            validateUsernamesEqual(legacyUser, userModel);
+//
+//            userModel.setFederationLink(model.getId());
+//            userModel.setEnabled(legacyUser.isEnabled());
+//            userModel.setEmail(legacyUser.getEmail());
+//            userModel.setEmailVerified(legacyUser.isEmailVerified());
+//            userModel.setFirstName(legacyUser.getFirstName());
+//            userModel.setLastName(legacyUser.getLastName());
+//
+//            if (legacyUser.getAttributes() != null) {
+//                legacyUser.getAttributes().forEach((String name, List<String> values ) -> {values.forEach((str)-> {LOG.info(name +" "+str);});});
+//                legacyUser.getAttributes()
+//                        .forEach(userModel::setAttribute);
+//            }
+//
+//            getRoleModels(legacyUser, realm)
+//                    .forEach(userModel::grantRole);
+//
+//            getGroupModels(legacyUser, realm)
+//                    .forEach(userModel::joinGroup);
+//
+//            if (legacyUser.getRequiredActions() != null) {
+//                legacyUser.getRequiredActions()
+//                        .forEach(userModel::addRequiredAction);
+//            }
+//            return userModel;
     }
 
     public boolean isDuplicateUserId(LegacyUser legacyUser, RealmModel realm) {
@@ -102,6 +157,10 @@ public class UserModelFactory {
         }
 
         return session.users().getUserById(realm, legacyUser.getId()) != null;
+    }
+
+    public UserModel getUserById(LegacyUser legacyUser, RealmModel realm) {
+        return session.users().getUserById(realm, legacyUser.getId());
     }
 
     private void validateUsernamesEqual(LegacyUser legacyUser, UserModel userModel) {

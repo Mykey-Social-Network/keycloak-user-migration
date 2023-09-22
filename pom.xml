@@ -6,10 +6,10 @@
 
     <groupId>com.danielfrak.code.keycloak.providers</groupId>
     <artifactId>keycloak-rest-provider</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.28</version>
     <properties>
         <java.version>17</java.version>
-        <keycloak.version>21.1.1</keycloak.version>
+        <keycloak.version>22.0.1</keycloak.version>
         <mockito.version>5.4.0</mockito.version>
 
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -62,6 +62,21 @@
             <scope>provided</scope>
         </dependency>
 
+<!--        &lt;!&ndash; For JPA-related utilities and models &ndash;&gt;-->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-model-jpa</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- For other core services and utilities -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-services</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- https://mvnrepository.com/artifact/org.jboss.logging/jboss-logging -->
         <dependency>
             <groupId>org.jboss.logging</groupId>

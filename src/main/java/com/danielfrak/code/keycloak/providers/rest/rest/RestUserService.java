@@ -1,16 +1,19 @@
 package com.danielfrak.code.keycloak.providers.rest.rest;
 
+import com.danielfrak.code.keycloak.providers.rest.exceptions.RestUserProviderException;
 import com.danielfrak.code.keycloak.providers.rest.remote.LegacyUser;
 import com.danielfrak.code.keycloak.providers.rest.remote.LegacyUserService;
-import com.danielfrak.code.keycloak.providers.rest.exceptions.RestUserProviderException;
 import com.danielfrak.code.keycloak.providers.rest.rest.http.HttpClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.HttpStatus;
+import org.jboss.logging.Logger;
 import org.keycloak.common.util.Encode;
 import org.keycloak.component.ComponentModel;
 
 import java.io.IOException;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.danielfrak.code.keycloak.providers.rest.ConfigurationProperties.*;
@@ -20,6 +23,8 @@ public class RestUserService implements LegacyUserService {
     private final String uri;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+
+    private static final Logger LOG = Logger.getLogger(RestUserService.class);
 
     public RestUserService(ComponentModel model, HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
@@ -68,6 +73,13 @@ public class RestUserService implements LegacyUserService {
                 .filter(u -> equalsCaseInsensitive(username, u.getUsername()));
     }
 
+    @Override
+    public Optional<LegacyUser> findByPhone(String phone) {
+        return findLegacyUser(phone)
+                .filter(u -> u.getAttributes().containsKey("phoneNumber"))
+                .filter(u -> u.getAttributes().get("phoneNumber").stream().anyMatch(( p -> equalsCaseInsensitive(phone, p ))));
+    }
+
     private Optional<LegacyUser> findLegacyUser(String usernameOrEmail) {
         if (usernameOrEmail != null) {
             usernameOrEmail = Encode.urlEncode(usernameOrEmail);
@@ -97,6 +109,25 @@ public class RestUserService implements LegacyUserService {
             var response = httpClient.post(passwordValidationUri, json);
             return response.getCode() == HttpStatus.SC_OK;
         } catch (IOException e) {
+            throw new RestUserProviderException(e);
+        }
+    }
+
+    @Override
+    public Optional<LegacyUser> createLegacyUser(String username) {
+        var createUser = new CreateUserDto(username);
+        try{
+            var m = objectMapper.convertValue(createUser, Map.class);
+            var json = objectMapper.writeValueAsString(m);
+            LOG.info("output " + json);
+            var response = httpClient.post(this.uri+"/",json);
+            if(response.getCode() != HttpStatus.SC_OK)
+                throw  new RuntimeException(String.valueOf(response.getCode()));
+            LOG.info("code " + response.getCode());
+            LOG.info("body " + response.getBody());
+            var legacyUser = objectMapper.readValue(response.getBody(), LegacyUser.class);
+            return Optional.ofNullable(legacyUser);
+        } catch (JsonProcessingException e) {
             throw new RestUserProviderException(e);
         }
     }
